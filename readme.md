@@ -1,6 +1,6 @@
 # Azure Data Factory (ADF) Deployment Pipeline using ADF CLI
 
-This is a readme file explaining the pipeline for deploying Azure Data Factory (ADF) using the ADF CLI. The pipeline consists of 4 stages: Artifact collection,Sandbox , Nonprod and Prod. The pipeline is triggered when there are applicable changes to the deployment artifacts, as determined by the `DEPLOY_ARTIFACTS` variable.
+This is a readme file explaining the pipeline for deploying Azure Data Factory (ADF) using the ADF CLI. The pipeline consists of 4 stages: Artifact collection,Dev , Test and Prod. The pipeline is triggered when there are applicable changes to the deployment artifacts, as determined by the `DEPLOY_ARTIFACTS` variable.
 
 ![solution][solution_diagram]
 ## Pipeline Structure
@@ -15,21 +15,21 @@ This stage collects the deployment artifacts required for ADF deployment. It per
 2. Runs a script to collect and stage the deployment artifacts.
 3. Publishes the artifacts to the pipeline for further stages to consume.
 
-### Stage: Sandbox
+### Stage: Dev
 
-This stage is responsible for deploying the ADF to the Sandbox environment. It depends on the CollectArtifacts stage and is only triggered if there are applicable changes to the deployment artifacts. It performs the following steps:
+This stage is responsible for deploying the ADF to the Dev environment. It depends on the CollectArtifacts stage and is only triggered if there are applicable changes to the deployment artifacts. It performs the following steps:
 
 1. Downloads the deployment artifacts from the pipeline.
-2. Replaces any environment variables to match sandbox
+2. Replaces any environment variables to match Dev
 3. Uses the Azure CLI task to deploy the ADF using the ADF CLI.
 4. The ADF CLI deployment script is executed, passing the necessary parameters for deployment.
 
 ### Stage: Test
 
-This stage is responsible for deploying the ADF to the Nonprod environment. It performs similar steps as the Sandbox stage:
+This stage is responsible for deploying the ADF to the Nonprod environment. It performs similar steps as the Dev stage:
 
 1. Downloads the deployment artifacts from the pipeline.
-2. Replaces any environment variables to match sandbox
+2. Replaces any environment variables to match Dev
 3. Uses the Azure CLI task to deploy the ADF using the ADF CLI.
 4. The ADF CLI deployment script is executed, passing the necessary parameters for deployment.
 
@@ -38,7 +38,7 @@ This stage is responsible for deploying the ADF to the Nonprod environment. It p
 This stage is responsible for deploying the ADF to the Nonprod environment. It performs similar steps as the Non Prod stage:
 
 1. Downloads the deployment artifacts from the pipeline.
-2. Replaces any environment variables to match sandbox
+2. Replaces any environment variables to match Dev
 3. Uses the Azure CLI task to deploy the ADF using the ADF CLI.
 4. The ADF CLI deployment script is executed, passing the necessary parameters for deployment.
 
@@ -56,7 +56,7 @@ Before running this pipeline, ensure that you have done the following :
 The following pipeline variables are required:
 
 - `DEPLOY_ARTIFACTS`: Set to `0` if no applicable changes were made, otherwise set to `1` to trigger the deployment stages.
-- `sandbox_service_connection`: Azure Resource Manager service connection name for the Sandbox environment.
+- `Dev_service_connection`: Azure Resource Manager service connection name for the Dev environment.
 - `non_prod_service_connection`: Azure Resource Manager service connection name for the Nonprod environment.
 - Other parameters specific to your ADF deployment, such as `SourceResourceGroupName`, `SourceDataFactoryName`, etc.
 
