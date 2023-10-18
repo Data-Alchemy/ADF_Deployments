@@ -1,0 +1,222 @@
+name: ADF Release Pipeline
+
+trigger:
+  branches:
+    include:
+      - adf_publish
+  tags:
+    exclude:
+      - no-deploy
+
+variables:
+  - name: sandbox_service_connection
+    value: "sandbox_service_connection"
+  - name: test_service_connection
+    value: "tst_service_connection"
+  - name: prod_service_connection
+    value: "prod_service_connection"    
+
+parameters:
+- name: SourceResourceGroupName
+  type: string
+  default: rg1
+  values:
+    - rg1
+    - rg2
+
+- name: SourceDataFactoryName
+  type: string
+  default: adf1
+
+- name: SourceSubscription
+  type: string
+  default: 1233456-7891-1233-2232423232323
+  values:
+    - 1233456-7891-1233-2232423232323
+    - 1233456-7891-1233-2232423232323
+
+
+- name: TargetResourceGroupName
+  type: string
+  default: prod
+  values:
+    - dev
+    - tst
+
+- name: TargetDataFactoryName
+  type: string
+  default: adf2
+
+- name: TargetSubscription
+  type: string
+  default: 1233456-7891-1233-2232423232323
+  values:
+    - 1233456-7891-1233-2232423232323
+    - 1233456-7891-1233-2232423232323
+
+## prod parameters ##
+
+- name: ProdResourceGroupName
+  type: string
+  default: prodrg
+  values:
+    - prodrg
+
+- name: ProdDataFactoryName
+  type: string
+  default: adf1
+
+- name: ProdSubscription
+  type: string
+  default: 1233456-7891-1233-2232423232323
+  values:
+    - 1233456-7891-1233-2232423232323
+
+- name: DevReplacementPrefix
+  type: string
+  default: dev
+  values:
+    - dev
+    - test
+    - prod
+
+- name: TestReplacementPrefix
+  type: string
+  default: test
+  values:
+    - dev
+    - test
+    - prod
+
+- name: ProdReplacementPrefix
+  type: string
+  default: prod
+  values:
+    - prod
+
+- name: TriggerAction
+  type: string
+  default: stop
+  values:
+    - start
+    - stop
+
+stages:
+- stage: CollectArtifacts
+  displayName: Collect Artifacts
+  jobs:
+  - job: CollectArtifactsJob
+    displayName: Collect Artifacts
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+
+    - checkout: self
+      clean: true
+      fetchDepth: 2 # Fetch only two commits
+      fetchTags: false
+
+  
+    - task: Bash@3
+      displayName: 'Run script to collect and stage deployment artifacts'
+      inputs:
+        filePath: '$(System.DefaultWorkingDirectory)/release/Collect_Deployment_Artifacts.sh'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/release'
+
+    - task: PublishPipelineArtifact@1
+      displayName: 'Publish Artifacts to Pipeline'
+      inputs:
+        artifactName: 'deploy_artifacts'
+        targetPath: '$(System.DefaultWorkingDirectory)/release/Artifacts'
+
+
+- stage: Sandbox
+  displayName: Sandbox
+  dependsOn: CollectArtifacts
+  condition: ne(variables['DEPLOY_ARTIFACTS'], '0') # <- this line checks the DEPLOY_ARTIFACTS variable to see if any applicable changes where made
+  jobs:
+  - job: DeployToSandbox
+    displayName: Deploy to Sandbox
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Deployment Artifacts from Pipeline'
+      inputs:
+        artifactName: 'deploy_artifacts'
+        targetPath: '$(System.DefaultWorkingDirectory)/release/Artifacts/'
+        flatten: false
+
+    - task: AzureCLI@2
+      displayName: Deploy
+      inputs:
+        azureSubscription: $(sandbox_service_connection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(System.DefaultWorkingDirectory)/release'
+        inlineScript: |
+          
+          echo '${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.SourceSubscription}}'
+          bash $(System.DefaultWorkingDirectory)/release/Deploy_Resources.sh ${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.SourceSubscription}} ${{parameters.DevReplacementPrefix}} ${{parameters.DevReplacementPrefix}} ${{parameters.TriggerAction}}
+
+- stage: Test
+  displayName: Test
+  jobs:
+  - job: DeployToTest
+    displayName: Deploy to Test
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Deployment Artifacts from Pipeline'
+      inputs:
+        artifactName: 'deploy_artifacts'
+        targetPath: '$(System.DefaultWorkingDirectory)/release/Artifacts/'
+        flatten: false
+        
+    - task: AzureCLI@2
+      displayName: Deploy
+      inputs:
+        azureSubscription: $(test_service_connection)
+        scriptType: bash
+        scriptLocation: inlineScript
+        workingDirectory: '$(System.DefaultWorkingDirectory)/release'
+        inlineScript: |
+          bash $(System.DefaultWorkingDirectory)/release/Deploy_Resources.sh ${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.TargetResourceGroupName}} ${{parameters.TargetDataFactoryName}} ${{parameters.TargetSubscription}} ${{parameters.DevReplacementPrefix}} ${{parameters.TestReplacementPrefix}} ${{parameters.TriggerAction}}
+
+
+- stage: Prod
+  displayName: Production
+  dependsOn: Test   # Make the Prod stage dependent on Test
+  jobs:
+
+  - deployment: DeployToProd
+    displayName: Deploy to Prod
+    environment: 'Production'  # Specify the environment as "production" for approval
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            clean: true
+            fetchDepth: 2 # Fetch only two commits
+            fetchTags: false
+
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download Deployment Artifacts from Pipeline'
+            inputs:
+              artifactName: 'deploy_artifacts'
+              targetPath: '$(System.DefaultWorkingDirectory)/release/Artifacts/'
+              flatten: false
+
+          - task: AzureCLI@2
+            displayName: Deploy
+            inputs:
+              azureSubscription: $(prod_service_connection)
+              scriptType: bash
+              scriptLocation: inlineScript
+              workingDirectory: '$(System.DefaultWorkingDirectory)/release'
+              inlineScript: |
+                bash $(System.DefaultWorkingDirectory)/release/Deploy_Resources.sh ${{parameters.SourceResourceGroupName}} ${{parameters.SourceDataFactoryName}} ${{parameters.ProdResourceGroupName}} ${{parameters.ProdDataFactoryName}} ${{parameters.ProdSubscription}} ${{parameters.DevReplacementPrefix}} ${{parameters.ProdReplacementPrefix}} ${{parameters.TriggerAction}}
